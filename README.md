@@ -1,9 +1,22 @@
 # **FluxERP**
 
-FluxERP é um sistema ERP leve, modular e eficiente, desenvolvido para operações enxutas e integrações rápidas.  
-Ele fornece uma base sólida para cadastro, armazenamento e consulta de dados, permitindo que o sistema evolua conforme a necessidade — desde uma aplicação simples até um ERP completo.
+**Aviso**: Apesar do nome, este projeto **não é um ERP**. É um **assistente de perguntas em linguagem natural sobre um banco de dados**. Você envia um arquivo `.db` (SQLite), faz perguntas em português simples e o sistema:
+1) **Gera a consulta SQL** com IA (Ollama)  
+2) **Exibe a SQL gerada** para conferência  
+3) **Executa a SQL** no banco enviado (modo leitura)  
+4) **Retorna os resultados** (JSON)  
 
-O objetivo é **ser simples para começar, fácil de manter e pronto para crescer**.
+O foco é **perguntar qualquer coisa sobre os dados** e **ver a SQL correspondente** de forma transparente.
+
+## ✨ O que o sistema faz
+
+- Recebe um banco **SQLite** (upload de `.db` ou uso de um `.db` existente)
+- Converte **Linguagem Natural → SQL** com **Ollama** (LLM local)
+- Mostra **a SQL gerada antes de executar**
+- Executa **somente consultas de leitura** (SELECT) por segurança
+- Retorna resultados em **JSON**
+- Documentação interativa via **Swagger UI**
+
 
 ## 🧠 Integração com IA (Ollama)
 
@@ -138,6 +151,22 @@ Se quiser migrar para **PostgreSQL**, basta:
 | API documentada automaticamente | Desenvolvimento rápido |
 
 
+**Request (JSON):**
+json
+{
+  "question": "Quais clientes compraram mais de R$ 500 em novembro?"
+}
+```
+**Resposta (JSON):**
+{
+  "sql": "SELECT c.nome, SUM(p.total) AS total ...",
+  "rows": [
+    {"nome": "ACME Ltda", "total": 1200.50},
+    {"nome": "Mercury SA", "total": 750.00}
+  ]
+}
+
+```
 ## 🔮 Rumo à evolução
 
 Algumas funcionalidades futuras planejadas:
