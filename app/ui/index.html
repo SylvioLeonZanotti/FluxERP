@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Agente NL→SQL</title>
+  <style>
+    :root{
+      --bg:#f7f3ef;
+      --surface:#ffffff;
+      --text:#1d232a;
+      --muted:#6b7280;
+      --primary:#0A5FB5;  /* azul */
+      --accent:#00B6A8;   /* turquesa */
+      --stroke:#e8e2db;
+      --shadow:0 20px 50px rgba(0,0,0,.08);
+      --ink:#0f1729;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg);
+      background-image:
+        radial-gradient(1200px 600px at 60% -10%, rgba(10,95,181,.08), transparent 60%),
+        radial-gradient(800px 500px at 10% -20%, rgba(0,182,168,.08), transparent 60%);
+      color:var(--text);
+    }
+
+    /* hero */
+    .hero{max-width:980px;margin:0 auto;padding:72px 24px 24px;text-align:center}
+    .hero h1{margin:0 0 24px;font-size:28px;font-weight:800;letter-spacing:.2px}
+    .prompt{
+      max-width:860px;margin:0 auto;background:var(--surface);
+      border:1px solid var(--stroke);border-radius:24px;box-shadow:var(--shadow);
+      padding:16px;display:flex;align-items:center;gap:10px
+    }
+    .prompt input{
+      flex:1;border:none;outline:none;font-size:16px;padding:12px 14px;background:transparent
+    }
+    .prompt .actions{display:flex;gap:8px;align-items:center}
+    .btn{
+      border:1px solid var(--stroke);background:#fff;color:var(--text);
+      padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:700
+    }
+    .btn.primary{background:linear-gradient(180deg,var(--primary),#084e93);color:#fff;border:none}
+
+    .file-pill{
+      display:none;align-items:center;gap:8px;
+      background:#eef6ff;color:#114b80;border:1px solid #d6e7ff;
+      padding:8px 10px;border-radius:999px;font-size:13px
+    }
+    .file-pill .name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--stroke);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted)}
+    .muted{color:var(--muted);font-size:14px}
+    .center{display:flex;justify-content:center;gap:10px;margin-top:12px}
+
+    /* results */
+    .wrap{max-width:980px;margin:28px auto;padding:0 24px}
+    .card{background:var(--surface);border:1px solid var(--stroke);border-radius:16px;box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+    .title{font-weight:800;margin-bottom:8px}
+    .sql{
+      white-space:pre-wrap;overflow:auto;border-radius:12px;padding:12px;
+      background:#0f1a2d;color:#e6f0ff;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px
+    }
+    .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .right{margin-left:auto}
+    .tablewrap{overflow:auto;border-radius:12px;border:1px solid var(--stroke)}
+    table{border-collapse:collapse;width:100%;background:#fff}
+    th,td{border:1px solid var(--stroke);padding:10px 12px;text-align:left;font-size:14px}
+    th{background:#f5f7fb}
+    .hide{display:none}
+
+    /* toast */
+    .toast{
+      position:fixed;bottom:20px;right:20px;background:#fff;border:1px solid var(--stroke);
+      border-radius:12px;box-shadow:var(--shadow);padding:10px 12px;font-size:14px;display:none
+    }
+    .toast.show{display:block;animation:pop .18s ease-out}
+    @keyframes pop{from{transform:translateY(6px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+    /* fade-in */
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .fade-in{animation:fadeIn .28s ease-out both}
+    @media (prefers-reduced-motion:reduce){.fade-in{animation:none}}
+  </style>
+</head>
+<body>
+
+  <section class="hero">
+    <h1>Olá. Como posso te ajudar hoje?</h1>
+
+    <div class="prompt">
+      <input id="q" type="text" placeholder="Digite sua pergunta em Português…" />
+      <div class="actions">
+        <input id="file" type="file" accept=".db" class="hide" />
+        <button id="btnUpload" class="btn" title="Enviar base SQLite (.db)">+</button>
+        <button id="btnAsk" class="btn primary" title="Consultar">Perguntar</button>
+      </div>
+    </div>
+
+    <div class="center">
+      <span id="pillDb" class="file-pill" title="Banco anexado para esta sessão">
+        <strong>DB:</strong> <span id="dbName" class="name"></span>
+        <button id="btnClearDb" class="btn" style="padding:4px 8px">Remover</button>
+      </span>
+      <span class="pill">FastAPI</span>
+      <span class="pill">SQLite</span>
+      <span class="pill">LLM local (Ollama)</span>
+    </div>
+
+    <div id="hint" class="muted center">Dica: você pode perguntar “Faturamento por mês em 2024” ou “Top 10 clientes por receita”.</div>
+  </section>
+
+  <section class="wrap">
+    <div id="answerCard" class="card hide">
+      <div class="row"><div class="title">Resposta</div></div>
+      <div id="answerTxt" style="line-height:1.6"></div>
+    </div>
+
+    <div id="sqlCard" class="card hide">
+      <div class="row">
+        <div class="title">SQL gerado</div>
+        <div class="right"><button id="btnCopySql" class="btn">Copiar SQL</button></div>
+      </div>
+      <div id="sqlBox" class="sql"></div>
+    </div>
+
+    <div id="tableCard" class="card hide">
+      <div class="row">
+        <div class="title">Resultado</div>
+        <div class="right"><button id="btnCsv" class="btn">Baixar CSV</button></div>
+      </div>
+      <div class="tablewrap"><div id="tableMount"></div></div>
+    </div>
+  </section>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+const $ = (q) => document.querySelector(q);
+
+const qInput      = $("#q");
+const btnAsk      = $("#btnAsk");
+const btnUpload   = $("#btnUpload");
+const fileInput   = $("#file");
+const pillDb      = $("#pillDb");
+const dbNameEl    = $("#dbName");
+const btnClearDb  = $("#btnClearDb");
+
+const answerCard  = $("#answerCard");
+const answerTxt   = $("#answerTxt");
+const sqlCard     = $("#sqlCard");
+const sqlBox      = $("#sqlBox");
+const btnCopySql  = $("#btnCopySql");
+const tableCard   = $("#tableCard");
+const tableMount  = $("#tableMount");
+const btnCsv      = $("#btnCsv");
+const toast       = $("#toast");
+
+let currentDb = { id: null, name: null };
+let lastCols = [], lastRows = [];
+
+/* UX helpers */
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(()=>toast.classList.remove("show"), 1600);
+}
+function reveal(el){
+  el.classList.remove("hide");
+  el.classList.remove("fade-in");
+  void el.offsetWidth;           // reflow para reiniciar animação
+  el.classList.add("fade-in");
+}
+
+/* Table + CSV */
+function mountTable(columns, rows){
+  if(!columns || !columns.length){
+    tableMount.innerHTML = "<div style='padding:10px;color:#6b7280'>Sem colunas.</div>";
+    return;
+  }
+  let html = "<table><thead><tr>";
+  for(const c of columns) html += `<th>${c}</th>`;
+  html += "</tr></thead><tbody>";
+  if(rows && rows.length){
+    for(const r of rows){
+      html += "<tr>";
+      for(const cell of r) html += `<td>${cell ?? ""}</td>`;
+      html += "</tr>";
+    }
+  }else{
+    html += `<tr><td colspan="${columns.length}" style="color:#6b7280">Sem registros.</td></tr>`;
+  }
+  html += "</tbody></table>";
+  tableMount.innerHTML = html;
+}
+function toCSV(columns, rows){
+  const esc = v => {
+    const s = v==null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const head = columns.map(esc).join(",");
+  const body = (rows||[]).map(r => r.map(esc).join(",")).join("\n");
+  return head + "\n" + body + "\n";
+}
+
+/* Upload DB */
+btnUpload.onclick = () => fileInput.click();
+
+fileInput.onchange = async (e) => {
+  const f = e.target.files?.[0];
+  if(!f) return;
+  try{
+    const fd = new FormData();
+    fd.append("file", f, f.name);
+    const res = await fetch("/db/upload", { method: "POST", body: fd });
+    // tenta JSON com fallback
+    let data = {};
+    try{ data = await res.json(); }catch{ throw new Error("Falha no upload"); }
+    if(!res.ok || !data.ok){ throw new Error(data.detail || "Falha no upload"); }
+    currentDb = { id: data.db_id || "active", name: data.name || f.name };
+    dbNameEl.textContent = currentDb.name;
+    pillDb.style.display = "inline-flex";
+    showToast("Base carregada.");
+  }catch(err){
+    console.error(err);
+    showToast("Não foi possível enviar a base.");
+  }finally{
+    fileInput.value = "";
+  }
+};
+
+btnClearDb.onclick = () => {
+  currentDb = { id: null, name: null };
+  pillDb.style.display = "none";
+  showToast("Base removida desta sessão.");
+};
+
+/* Perguntar */
+async function ask(){
+  const pergunta = (qInput.value || "").trim();
+  if(!pergunta){ showToast("Digite sua pergunta."); qInput.focus(); return; }
+
+  btnAsk.disabled = true;
+
+  // limpa cartões
+  [answerCard, sqlCard, tableCard].forEach(c => c.classList.add("hide"));
+  answerTxt.textContent = ""; sqlBox.textContent = "";
+  lastCols = []; lastRows = [];
+
+  try{
+    const body = { pergunta };
+    if(currentDb.id) body.db_id = currentDb.id;
+
+    const res = await fetch("/ask", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+
+    let data = {};
+    try{ data = await res.json(); }catch{ throw new Error("Resposta inválida da API"); }
+
+    if(data.answer){
+      answerTxt.textContent = data.answer;
+      reveal(answerCard);
+    }
+    if(data.sql){
+      sqlBox.textContent = (data.sql || "").trim();
+      reveal(sqlCard);
+    }
+    if(data.ok && data.columns && data.rows){
+      lastCols = data.columns; lastRows = data.rows;
+      mountTable(data.columns, data.rows);
+      reveal(tableCard);
+    }
+
+    showToast(data.ok ? "Consulta concluída." : (data.mensagem || "Falha na consulta."));
+  }catch(err){
+    console.error(err);
+    showToast("Erro ao consultar a API.");
+  }finally{
+    btnAsk.disabled = false;
+  }
+}
+
+btnAsk.onclick = ask;
+qInput.addEventListener("keydown", (ev) => {
+  if(ev.key === "Enter"){ ev.preventDefault(); ask(); }
+});
+
+/* copiar SQL */
+btnCopySql.onclick = async () => {
+  try{
+    await navigator.clipboard.writeText(sqlBox.textContent || "");
+    showToast("SQL copiado.");
+  }catch{ showToast("Não foi possível copiar."); }
+};
+
+/* baixar CSV */
+btnCsv.onclick = () => {
+  const csv = toCSV(lastCols, lastRows);
+  const blob = new Blob([csv], {type: "text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "resultado.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+};
+</script>
+</body>
+</html>
